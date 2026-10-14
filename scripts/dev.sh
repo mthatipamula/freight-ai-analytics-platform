@@ -5,6 +5,7 @@
 #   ./scripts/dev.sh status       containers and backend health
 #   ./scripts/dev.sh logs [svc]   follow logs
 #   ./scripts/dev.sh setup-data   create the BigQuery dataset, tables and views and load synthetic freight data
+#   ./scripts/dev.sh setup-trailers  regenerate trailer telematics up to now (run on demo day so positions are current)
 #   ./scripts/dev.sh samples      redraw the sample bills of lading
 #   ./scripts/dev.sh test         governance unit tests
 set -euo pipefail
@@ -30,8 +31,9 @@ MSG
   stop)       docker compose stop ;;
   status)     docker compose ps --format 'table {{.Service}}\t{{.Status}}'; curl -s localhost:8061/health; echo ;;
   logs)       docker compose logs -f --tail 100 ${2:+"$2"} ;;
-  setup-data) docker compose run --rm --no-deps backend python -m app.data.generate ;;
+  setup-data) docker compose run --rm --no-deps backend sh -c "python -m app.data.generate && python -m app.data.trailers" ;;
+  setup-trailers) docker compose run --rm --no-deps backend python -m app.data.trailers ;;
   samples)    docker compose run --rm --no-deps -v "$PWD/backend/samples:/app/samples" backend python -m app.data.make_samples ;;
   test)       docker compose run --rm --no-deps -v "$PWD/backend/tests:/app/tests:ro" backend sh -c "pip install -q pytest && python -m pytest -q -p no:cacheprovider tests" ;;
-  *) echo "usage: $0 [start|stop|status|logs [service]|setup-data|samples|test]"; exit 1 ;;
+  *) echo "usage: $0 [start|stop|status|logs [service]|setup-data|setup-trailers|samples|test]"; exit 1 ;;
 esac

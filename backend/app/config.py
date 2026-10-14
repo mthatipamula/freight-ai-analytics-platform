@@ -14,7 +14,8 @@ MAX_ROWS_RETURNED = 500
 MAX_AGENT_STEPS = 8
 
 # The agent may only query these curated views: no customer contact details, no raw tables.
-ALLOWED_VIEWS = {"v_shipments", "v_terminals", "v_claims", "v_shipment_events", "v_bills_of_lading"}
+ALLOWED_VIEWS = {"v_shipments", "v_terminals", "v_claims", "v_shipment_events", "v_bills_of_lading",
+                 "v_trailers", "v_sites", "v_trailer_pings", "v_trailer_positions", "v_trailer_trips", "v_trailer_loads"}
 
 
 def table(name: str) -> str:

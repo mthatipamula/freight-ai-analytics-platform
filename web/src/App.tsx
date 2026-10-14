@@ -4,12 +4,14 @@ import Ask from './views/Ask';
 import Catalog from './views/Catalog';
 import Documents from './views/Documents';
 import Governance from './views/Governance';
+import Trailers from './views/Trailers';
 
-type View = 'ask' | 'documents' | 'governance' | 'catalog';
-const NAV: [View, string][] = [['ask', 'Ask your data'], ['documents', 'Bills of lading'], ['governance', 'Governance'], ['catalog', 'Data catalog']];
+type View = 'ask' | 'trailers' | 'documents' | 'governance' | 'catalog';
+const NAV: [View, string][] = [['ask', 'Ask your data'], ['trailers', 'Trailers'], ['documents', 'Bills of lading'], ['governance', 'Governance'], ['catalog', 'Data catalog']];
 
 export default function App() {
   const [view, setView] = useState<View>('ask');
+  const [question, setQuestion] = useState<string | null>(null);  // handed from another page to Ask
   const [health, setHealth] = useState<{ agentModel: string; fastModel: string; project: string } | null>(null);
   useEffect(() => { api('/health').then(setHealth).catch(() => setHealth(null)); }, []);
   return (
@@ -22,7 +24,8 @@ export default function App() {
           <span className="chip">Gemini · {health.agentModel}</span><span className="chip">BigQuery</span><span className="chip">Vertex AI</span></div>}
       </header>
       <main>
-        {view === 'ask' && <Ask />}
+        {view === 'ask' && <Ask initialQuestion={question} onStarted={() => setQuestion(null)} />}
+        {view === 'trailers' && <Trailers onAsk={(q) => { setQuestion(q); setView('ask'); }} />}
         {view === 'documents' && <Documents />}
         {view === 'governance' && <Governance />}
         {view === 'catalog' && <Catalog />}

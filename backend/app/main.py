@@ -1,13 +1,14 @@
 """Freight AI Analytics Platform API."""
 import asyncio
 import logging
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import agent, config, documents, governance, semantic
+from . import agent, config, documents, governance, semantic, trailers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 app = FastAPI(title="Freight AI Analytics Platform", version="1.0.0")
@@ -109,3 +110,21 @@ async def governance_view():
                        "maskedFields": ["consignee contact name, phone and email (not in any view)",
                                         "residential consignee names (shown as 'Residential customer')"]},
             "totals": totals, "log": log_rows}
+
+
+@app.get("/api/trailers")
+async def trailer_positions():
+    positions, terminals = await asyncio.gather(asyncio.to_thread(trailers.positions), asyncio.to_thread(trailers.sites))
+    return {"trailers": positions, "terminals": terminals}
+
+
+@app.get("/api/trailers/alerts")
+async def trailer_alerts():
+    return await asyncio.to_thread(trailers.alerts)
+
+
+@app.get("/api/trailers/{trailer_id}")
+async def trailer_trail(trailer_id: str, hours: int = 72):
+    if not re.fullmatch(r"[A-Z]\d{6}", trailer_id):
+        raise HTTPException(400, "Bad trailer id")
+    return await asyncio.to_thread(trailers.trail, trailer_id, max(1, min(hours, 720)))
