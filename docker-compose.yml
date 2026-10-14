@@ -1,0 +1,27 @@
+# Local stack. Google Cloud access uses your own Application Default Credentials
+# (gcloud auth application-default login), mounted read-only; no keys are stored in the project.
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /home/app/gcloud/application_default_credentials.json
+    volumes:
+      - ${HOME}/.config/gcloud:/home/app/gcloud:ro
+    ports:
+      - "8061:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8060:8080"
+    restart: unless-stopped
