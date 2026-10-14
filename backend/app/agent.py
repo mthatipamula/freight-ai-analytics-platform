@@ -12,7 +12,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import datetime, timezone
 
 from google import genai
 from google.genai import types
@@ -52,7 +52,8 @@ def _system_prompt() -> str:
     return f"""You are a freight operations analyst for an LTL carrier. You answer questions from operations managers,
 sales and customer service by querying BigQuery, then explain the result in plain business language.
 
-Today is {date.today().isoformat()}. Data covers roughly the last 120 days. "Last week" means the last 7 full days.
+Now is {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC. Shipments cover roughly the last 120 days and trailer telematics
+the last 30 days. "Last week" means the last 7 full days.
 
 Rules:
 - Query only the approved views below; you may write bare names like v_shipments. Customer contact details are not
@@ -61,6 +62,8 @@ Rules:
 - Prefer aggregated queries; never select more columns than you need.
 - If a query fails, is blocked, or returns nothing, fix it and try again. Check categorical values first if unsure.
 - For "why" questions, drill down: compare the period or terminal to others, look at delay_reason, lanes, hubs.
+- For trailer questions, use v_trailer_positions for "now" and filter v_trailer_pings by time; link trailers to
+  shipments and claims through v_trailer_trips and v_trailer_loads.
 - This is BigQuery GoogleSQL: use FORMAT_DATE, DATE_TRUNC, EXTRACT, SAFE_DIVIDE (not STRFTIME or DATE_FORMAT).
 - For trends, use complete periods only: end weekly series at the last full week and monthly at the last full month.
 - Only state causes the data shows. If a cause is a guess (sales, demand, staffing), say it needs checking.

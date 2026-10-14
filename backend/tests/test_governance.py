@@ -13,6 +13,8 @@ OK = [
     "SELECT DATE_TRUNC(pickup_date, WEEK) AS week, COUNT(*) AS shipments FROM v_shipments GROUP BY 1",  # alias = table name
     "SELECT EXTRACT(WEEK FROM pickup_date) AS wk, COUNT(*) AS claims FROM v_claims c GROUP BY 1 ORDER BY claims",
     "SELECT * FROM v_shipments s JOIN v_terminals t ON s.destination_terminal = t.terminal_code",
+    "SELECT trailer_id, hours_stationary FROM v_trailer_positions WHERE status = 'AT_CUSTOMER'",
+    "SELECT p.trailer_id FROM v_trailer_pings p JOIN v_sites s ON ST_DWITHIN(p.location, s.center, 1000)",
 ]
 BLOCKED = [
     ("SELECT contact_phone FROM consignees", "not approved"),
@@ -23,6 +25,8 @@ BLOCKED = [
     ("SELECT * FROM v_shipments s LEFT JOIN shippers sh ON TRUE", "not approved"),
     ("SELECT * FROM v_shipments WHERE pro_number IN (SELECT pro_number FROM claims)", "not approved"),
     ("SELECT * FROM (SELECT * FROM consignees) x", "not approved"),
+    ("SELECT * FROM trailer_pings WHERE trailer_id = 'V530001'", "not approved"),     # raw telematics table
+    ("SELECT * FROM v_trailer_trips t JOIN trailer_loads l USING (trip_id)", "not approved"),
     ("DELETE FROM v_shipments WHERE TRUE", "SELECT"),
     ("SELECT 1; DROP TABLE v_shipments", "one SQL statement"),
     ("SELECT * FROM other_dataset.v_shipments", "outside the approved dataset"),

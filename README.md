@@ -10,6 +10,7 @@ are fictional.
 | Capability | Who uses it | AI pattern |
 |---|---|---|
 | **Ask your data**: "Why is Atlanta on-time performance low?" → governed BigQuery SQL → answer, chart, follow-ups | Operations managers, sales, customer service | **Agentic AI**: Gemini plans, runs several queries, reads results and drills down until it can explain |
+| **Trailer tracking**: map of every trailer from telematics (GPS, door, cargo and temperature sensors), alerts for detention, unplanned door openings, temperature excursions and idle empties | Dispatch, linehaul planning, claims/security | Fixed SQL with BigQuery GIS for the map and alerts; the same agent answers trailer questions |
 | **Bills of lading**: a scanned or photographed BOL → structured fields → rule checks → BigQuery | Billing and dock staff | **Gen AI**: one Gemini call with a strict JSON schema, then deterministic validation |
 | **Governance**: allowed views, byte caps, audit log | Data owners, security | Plain code: the model never touches BigQuery directly |
 
@@ -45,6 +46,37 @@ faster and easier to test. Rules that must be exact (valid NMFC freight class, l
 hazmat needs an emergency contact, shipper signature) are checked in code, not by the model. Anything doubtful is
 marked `NEEDS_REVIEW` for a person.
 
+## Trailer tracking
+
+**Storage choice: BigQuery** (with Pub/Sub in front of it in production).
+- **Scale:** a large LTL fleet sends millions of pings a day, which BigQuery handles easily:
+  - `trailer_pings` is partitioned by day and clustered by trailer, so one trailer's history reads only its blocks;
+  - each ping has a `GEOGRAPHY` point.
+- **Geofencing in SQL:** `ST_DWITHIN` matches each ping to a terminal or customer site (`v_trailer_pings`), so status
+  (moving, at terminal, at customer, stopped en route) and dwell time come from SQL.
+- **Same agent, same governance:** the agent can query trailers through the same approved-view model.
+- **Joins to freight data:** trailers link to trips, trips to shipments (`v_trailer_loads`), and shipments to claims,
+  so "was the door opened on the load that had a shortage claim?" is a single query.
+- **Bigtable:** worth adding only for millisecond "where is trailer X now" reads at very high write volume.
+
+```
+Telematics units → Pub/Sub → BigQuery subscription → trailer_pings (partitioned by day, clustered by trailer_id)
+                          └→ Dataflow (optional) → real-time geofence alerts, Bigtable latest-position cache
+```
+
+**Synthetic data:** `python -m app.data.trailers` (or `./scripts/dev.sh setup-trailers`) builds about 240 trailers with
+30 days of pings up to the current time.
+- **Pings:** every 15 minutes moving, hourly parked, plus door, cargo and motion events.
+- **Movement follows the shipments:** freight is grouped into nightly linehaul trips through the hubs, and empties are
+  repositioned when a terminal runs short.
+- **Patterns:**
+  - Detention: trailers dropped at FreshMart DC – Atlanta and Precision Stamping Works – Detroit sit 2–6 days.
+  - Empty trailers pile up at the Memphis hub.
+  - On loads that later had a shortage claim, the trailer door was opened at an unplanned stop between terminals.
+  - One refrigerated trailer rose to about 50 °F on a Charlotte → Atlanta grocery run.
+
+Positions are relative to the time you generate the data, so run `./scripts/dev.sh setup-trailers` on demo day.
+
 ## Governance
 
 The model writes SQL; code decides whether it runs.
@@ -52,7 +84,7 @@ The model writes SQL; code decides whether it runs.
 | Control | Where |
 |---|---|
 | One read-only `SELECT`/`WITH` statement; DML, DDL and scripting keywords refused | `check_sql` |
-| Tables only from the approved `v_` views in this project and dataset; raw tables, other datasets and `INFORMATION_SCHEMA` refused (FROM/JOIN lists, comma joins and subqueries are all walked) | `_table_refs`, `check_sql` |
+| Tables only from the approved `v_` views (11, including six trailer views) in this project and dataset; raw tables, other datasets and `INFORMATION_SCHEMA` refused (FROM/JOIN lists, comma joins and subqueries are all walked) | `_table_refs`, `check_sql` |
 | Dry run first; refused above 200 MB, and the same cap set as `maximum_bytes_billed` | `run_query` |
 | At most 500 rows returned to the model | `run_query` |
 | Every attempt (allowed, blocked, error) written to `ai_audit_log` and labeled on the BigQuery job | `audit` |
@@ -111,11 +143,12 @@ Your Application Default Credentials are mounted into the backend read-only, so 
 | Command | |
 |---|---|
 | `./scripts/dev.sh start` / `stop` / `status` / `logs [service]` | Stack lifecycle |
-| `./scripts/dev.sh setup-data` | Create the dataset, tables and views, and load the synthetic data |
+| `./scripts/dev.sh setup-data` | Create the dataset, tables and views, and load the synthetic freight and trailer data |
+| `./scripts/dev.sh setup-trailers` | Regenerate trailer telematics up to now (run on demo day) |
 | `./scripts/dev.sh samples` | Redraw the three sample bills of lading |
 | `./scripts/dev.sh test` | Governance unit tests |
 
-## Demo script (about 8 minutes)
+## Demo script (about 10 minutes)
 
 1. **Landing page.** The KPI strip comes from fixed SQL, not AI. Say: "Dashboards show *what*; people still ask *why*."
 2. **Ask:** "Which 5 destination terminals had the worst on-time delivery in the last 30 days?" Atlanta stands out.
@@ -125,10 +158,14 @@ Your Application Default Credentials are mounted into the backend read-only, so 
 4. **Ask:** "Which hub has the highest damage claim rate, and what does it cost us?" It finds Memphis.
 5. **Bills of lading.** Load "Phone photo with errors". Gemini reads a skewed, handwritten BOL. Code flags the missing
    freight class, weights that don't add up and the missing signature. Then load "Hazardous materials": all checks pass.
-6. **Governance.** Show the guardrails, the audit log, and a blocked or self-corrected query.
+6. **Trailers.**
+   - The map shows Memphis with 50+ trailers parked, and the alerts list detention at two customers.
+   - Click a "door opened away from any site" alert with a claim: the route shows the red ring where the door opened mid-trip.
+   - Click **Ask AI about this trailer**: Gemini links the door opening to the shortage claim on that load.
+7. **Governance.** Show the guardrails, the audit log, and a blocked or self-corrected query.
    Try "show me consignee phone numbers": Gemini declines. Even if a prompt talked it into trying, no approved
    view has those columns and the raw `consignees` table is blocked, so the protection does not depend on the model.
-7. **Data catalog.** One definition per metric. This is where Looker fits.
+8. **Data catalog.** One definition per metric. This is where Looker fits.
 
 ## Where Looker fits
 
@@ -156,6 +193,8 @@ Cost controls: the byte cap per query, a step limit per question, Flash for docu
 - **Evaluation:** a Vertex AI evaluation set of real questions with expected SQL results, run on every prompt or model change.
 - **Exception explanation (next):** embed shipment event notes and claims text with Vertex AI embeddings, and use
   BigQuery `VECTOR_SEARCH` so the agent can cite similar past incidents.
+- **Live telematics:** Pub/Sub ingestion with a BigQuery subscription, and Dataflow for real-time geofence alerts
+  (detention starting, door opened en route, temperature out of range) pushed to dispatch.
 - **Higher document volume:** Document AI for classification and splitting of multi-page scans, with Gemini for the
   freight-specific fields.
 
@@ -171,6 +210,8 @@ backend/app/
   config.py        Settings from environment
   data/generate.py       Synthetic data and views
   data/make_samples.py   Sample BOL images
+  data/trailers.py       Synthetic trailer telematics, trips and geofences
+  trailers.py      Trailer map and alert queries
 backend/tests/     Governance tests
-web/src/           React UI: Ask, Bills of lading, Governance, Data catalog
+web/src/           React UI: Ask, Trailers (Leaflet map), Bills of lading, Governance, Data catalog
 ```

@@ -8,12 +8,14 @@ const SUGGESTIONS = [
   'Which hub has the highest damage claim rate, and what does it cost us?',
   'Show weekly shipment volume and revenue trend for the last 12 weeks',
   'Which grocery distribution centers miss the most delivery appointments?',
+  'Which customers are holding our trailers longer than 48 hours?',
+  'Where are empty trailers piling up?',
 ];
 
 interface Turn { question: string; events: AgentEvent[]; done: boolean }
 interface Overview { shipments: number; on_time_pct: number; revenue: number; in_transit: number; claims: number; open_claims: number; claim_amount: number }
 
-export default function Ask() {
+export default function Ask({ initialQuestion, onStarted }: { initialQuestion?: string | null; onStarted?: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState('');
@@ -22,6 +24,7 @@ export default function Ask() {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { api<Overview>('/api/overview').then(setKpi).catch(() => setKpi(null)); }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }); }, [turns]);
+  useEffect(() => { if (initialQuestion) { onStarted?.(); void ask(initialQuestion); } }, [initialQuestion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function ask(q: string) {
     const text = q.trim();
