@@ -274,3 +274,39 @@ backend/tests/     Governance and scorecard tests
 docs/              Target-state architecture and decision records (ADRs)
 web/src/           React UI: Ask, Trailers (Leaflet map), Bills of lading, Governance, Data catalog
 ```
+
+## Few other Questions
+
+Here are questions grouped by topic. ✅ marks ones that have been tested end to end, either by the scorecard or in my browser tests.
+
+On-time performance
+
+✅ Which 5 destination terminals had the worst on-time delivery in the last 30 days?
+✅ Why is Atlanta on-time performance low?
+✅ What was our overall on-time delivery rate in the last 30 days?
+✅ Which grocery distribution center has the most missed delivery appointments in the last 30 days?
+Which inbound lanes into Atlanta had the most linehaul delays?
+How has Atlanta’s weekly on-time rate changed over the last 12 weeks?
+Were there any weeks when Northeast terminals had unusually high delays? What was the reason?
+
+Claims
+8. ✅ Which breakbulk hub has the highest damage claim rate?
+9. ✅ How many shortage claims were filed in the last 30 days?
+10. Does freight class affect the damage claim rate?
+11. What are the 5 largest open claims, and which shippers do they belong to?
+12. ✅ Which trailer carried the load for claim CLM-00227, and was anything unusual recorded on that trip? (Claim IDs can change after you regenerate data; pick one from the “door opened” alerts on the Trailers page.)
+
+Trailers
+13. ✅ Which customer sites currently have our trailers sitting for more than 48 hours?
+14. ✅ At which terminal are the most empty trailers sitting idle for more than 3 days?
+15. ✅ Which refrigerated trailer had a temperature above 41 F in the last 30 days, and how warm did it get?
+16. Do unplanned trailer door openings between terminals line up with shortage claims?
+17. What share of our trailer miles were empty in the last 2 weeks?
+18. ✅ Tell me about trailer V530078 over the last 14 days: where it went, what it carried, any door openings away from terminals, and any claims on its loads.
+
+Volume, revenue and customers
+19. ✅ What was our total revenue from shipments picked up in the last 30 days?
+20. ✅ Show weekly shipment volume and revenue trend for the last 12 weeks
+21. Who are our top 10 shippers by revenue in the last 90 days, and what is their on-time rate?
+22. What is the average revenue per shipment by freight class?
+23. Which lanes have the longest average transit time?
