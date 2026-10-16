@@ -30,6 +30,51 @@ flowchart LR
   SEM[Semantic layer<br/>semantic.py] -.->|views, metric definitions| AG
 ```
 
+## How it works
+1. Ask your data (agentic AI)
+
+The user’s question goes to agent.py together with a system prompt that includes the semantic layer: which views exist, what each column means, and the one agreed formula for each metric.
+Gemini 2.5 Pro has two tools, run_sql and present_answer. It calls run_sql with a query and a one-line purpose.
+The SQL goes through governance.py:
+static checks: a single SELECT, approved views only, no raw tables or metadata;
+a BigQuery dry run to estimate size, refusing anything over 200 MB;
+execution with a hard byte cap;
+the result and the outcome (allowed, blocked or error) written to ai_audit_log.
+The rows go back to Gemini, which decides what to do next. It may drill down with another query, or fix its SQL if it was blocked or failed. That loop is what makes it agentic.
+Gemini calls present_answer with the explanation, which result to chart, and follow-up questions.
+Each step streams to the browser as it happens, so the user sees the reasoning, the SQL and the data scanned.
+Session memory keeps recent turns, so follow-ups like “why?” or “break it down by lane” work.
+
+2. Bills of lading (generative AI, not an agent)
+
+An image is uploaded.
+Gemini 2.5 Flash makes one call with a strict JSON schema (shipper, consignee, line items, class, weights, hazmat, signature).
+Deterministic Python rules validate it: valid NMFC class, line weights match the total, hazmat has an emergency contact, signature present.
+The result is saved as READY or NEEDS_REVIEW for a person to approve.
+
+It’s a single call because the task is well-defined. That’s cheaper, faster and easier to test than an agent.
+
+3. Trailer tracking
+
+Data: telematics pings land in trailer_pings, partitioned by day, clustered by trailer, with a GEOGRAPHY point.
+Geofencing: ST_DWITHIN in a BigQuery view matches each ping to a terminal or customer site. From that, SQL works out status (moving, at terminal, at customer) and dwell time.
+Map and alerts: come from fixed, parameterized SQL, not AI.
+AI questions: trailer views are on the same allowlist, so the agent can answer questions like “Was the door opened on the load that had a shortage claim?” by joining trips → loads → shipments → claims.
+
+4. Governance and security
+
+Layer	Control
+Data	AI sees only curated views. Customer contact details aren’t in any view, and residential names are masked.
+Query	Read-only; one SELECT; allowlisted views; dry-run size check; byte cap; at most 500 rows to the model
+Audit	Every AI query is logged with its question, SQL, status, bytes and rows, and shown on the Governance page
+Accuracy	The semantic layer forces one definition per metric, and the server checks chart columns exist
+Credentials	Application Default Credentials mounted read-only; no API keys in the code
+
+5. Where Looker fits
+
+Now: semantic.py is a stand-in for LookML.
+At Estes: the agent would use their Looker model instead, so AI answers match their dashboards and follow Looker permissions.
+
 **How a question is answered**
 
 1. The system prompt carries the semantic layer: approved views, column meanings and one definition per metric
@@ -146,7 +191,8 @@ Your Application Default Credentials are mounted into the backend read-only, so 
 | `./scripts/dev.sh setup-data` | Create the dataset, tables and views, and load the synthetic freight and trailer data |
 | `./scripts/dev.sh setup-trailers` | Regenerate trailer telematics up to now (run on demo day) |
 | `./scripts/dev.sh samples` | Redraw the three sample bills of lading |
-| `./scripts/dev.sh test` | Governance unit tests |
+| `./scripts/dev.sh test` | Unit tests (governance and scorecard checks) |
+| `./scripts/dev.sh eval [case]` | AI quality scorecard: 14 questions through Gemini (a few minutes, about $0.40) |
 
 ## Demo script (about 10 minutes)
 
@@ -198,6 +244,17 @@ Cost controls: the byte cap per query, a step limit per question, Flash for docu
 - **Higher document volume:** Document AI for classification and splitting of multi-page scans, with Gemini for the
   freight-specific fields.
 
+## Architecture decisions and AI quality
+
+- **[Target-state architecture](docs/architecture.md):** how this runs in production on Google Cloud (Datastream and
+  Pub/Sub ingestion, authorized views, Looker, Cloud Run behind IAP, VPC Service Controls), with security,
+  integration and operations.
+- **[Architecture decision records](docs/adr/):** seven decisions with alternatives and tradeoffs, from "agent writes
+  governed SQL" to "telematics in BigQuery".
+- **AI quality scorecard:** `./scripts/dev.sh eval` runs 14 questions (accuracy, metric definitions, safety) with
+  expected answers computed from BigQuery at run time. Results are saved to `ai_eval_results` and shown on the
+  Governance page. Latest runs: 14/14 passed, about 20 s and $0.03 per question.
+
 ## Project layout
 
 ```
@@ -212,6 +269,8 @@ backend/app/
   data/make_samples.py   Sample BOL images
   data/trailers.py       Synthetic trailer telematics, trips and geofences
   trailers.py      Trailer map and alert queries
-backend/tests/     Governance tests
+  evals.py         AI quality scorecard (test questions, checks, results to BigQuery)
+backend/tests/     Governance and scorecard tests
+docs/              Target-state architecture and decision records (ADRs)
 web/src/           React UI: Ask, Trailers (Leaflet map), Bills of lading, Governance, Data catalog
 ```

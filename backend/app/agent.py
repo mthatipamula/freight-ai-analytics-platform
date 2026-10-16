@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from . import config, governance, semantic
@@ -82,15 +83,20 @@ async def ask(question: str, session_id: str | None) -> AsyncIterator[dict]:
         system_instruction=_system_prompt(), tools=[TOOLS], temperature=0.1,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
     results: list[dict] = []
+    usage = {"inputTokens": 0, "outputTokens": 0, "modelCalls": 0}  # for cost per question
     yield {"type": "session", "sessionId": session_id, "model": config.AGENT_MODEL}
 
     for step in range(config.MAX_AGENT_STEPS):
         try:
-            resp = await _client.aio.models.generate_content(model=config.AGENT_MODEL, contents=contents, config=cfg)
+            resp = await _generate(contents, cfg)
         except Exception as err:  # noqa: BLE001
             log.exception("Gemini call failed")
             yield {"type": "error", "message": f"Model call failed: {type(err).__name__}: {str(err)[:200]}"}
             return
+        if um := resp.usage_metadata:
+            usage["inputTokens"] += um.prompt_token_count or 0
+            usage["outputTokens"] += (um.candidates_token_count or 0) + (um.thoughts_token_count or 0)
+            usage["modelCalls"] += 1
         if not resp.candidates or not resp.candidates[0].content:
             yield {"type": "error", "message": "The model returned no answer (it may have been blocked by safety filters)."}
             return
@@ -98,7 +104,8 @@ async def ask(question: str, session_id: str | None) -> AsyncIterator[dict]:
         calls = resp.function_calls or []
         if not calls:  # answered in plain text without present_answer
             text = resp.text or "I couldn't produce an answer."
-            yield {"type": "answer", "answer": text, "chart": None, "result": results[-1] if results else None, "followUps": []}
+            yield {"type": "answer", "answer": text, "chart": None, "result": results[-1] if results else None, "followUps": [],
+                   "queries": len(results), "usage": usage}
             _remember(session_id, question, text, results)
             return
 
@@ -128,7 +135,7 @@ async def ask(question: str, session_id: str | None) -> AsyncIterator[dict]:
                 chosen = results[idx - 1] if 0 < idx <= len(results) else (results[-1] if results else None)
                 chart = _chart(args, chosen)
                 yield {"type": "answer", "answer": args.get("answer", ""), "chart": chart, "result": chosen,
-                       "followUps": args.get("follow_ups", [])[:3], "queries": len(results)}
+                       "followUps": args.get("follow_ups", [])[:3], "queries": len(results), "usage": usage}
                 _remember(session_id, question, args.get("answer", ""), results)
                 return
             else:
@@ -136,6 +143,19 @@ async def ask(question: str, session_id: str | None) -> AsyncIterator[dict]:
         contents.append(types.Content(role="user", parts=responses))
 
     yield {"type": "error", "message": f"Stopped after {config.MAX_AGENT_STEPS} steps without a final answer."}
+
+
+async def _generate(contents: list, cfg: types.GenerateContentConfig) -> types.GenerateContentResponse:
+    """Gemini call with backoff on quota (429) and overload (503) errors, which are temporary."""
+    for wait in (2, 5, 10, 20, None):
+        try:
+            return await _client.aio.models.generate_content(model=config.AGENT_MODEL, contents=contents, config=cfg)
+        except genai_errors.APIError as err:
+            if err.code not in (429, 503) or wait is None:
+                raise
+            log.warning("Gemini returned %s; retrying in %ss", err.code, wait)
+            await asyncio.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 def _chart(args: dict, result: dict | None) -> dict | None:

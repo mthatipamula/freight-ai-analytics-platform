@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api, fmtBytes } from '../api';
+import Scorecard from './Scorecard';
 
 interface Gov {
   policy: { allowedViews: string[]; maxBytesPerQuery: number; maxRows: number; readOnly: boolean; maskedFields: string[] };
@@ -35,6 +36,8 @@ export default function Governance() {
         <div><h3>Approved views</h3><ul>{g.policy.allowedViews.map((v) => <li key={v}><code>{v}</code></li>)}</ul></div>
         <div><h3>Hidden from the AI</h3><ul>{g.policy.maskedFields.map((m) => <li key={m}>{m}</li>)}</ul></div>
       </div>
+      <h2>AI quality scorecard</h2>
+      <Scorecard />
       <h2>Audit log</h2>
       <div className="table-wrap"><table>
         <thead><tr><th>Time</th><th>Status</th><th>Question</th><th className="num">Scanned</th><th className="num">Rows</th><th>Reason</th></tr></thead>
