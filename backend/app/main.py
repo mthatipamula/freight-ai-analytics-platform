@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import agent, config, documents, governance, semantic, trailers
+from . import agent, config, documents, evals, governance, semantic, trailers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 app = FastAPI(title="Freight AI Analytics Platform", version="1.0.0")
@@ -128,3 +128,9 @@ async def trailer_trail(trailer_id: str, hours: int = 72):
     if not re.fullmatch(r"[A-Z]\d{6}", trailer_id):
         raise HTTPException(400, "Bad trailer id")
     return await asyncio.to_thread(trailers.trail, trailer_id, max(1, min(hours, 720)))
+
+
+@app.get("/api/evals")
+async def eval_scorecard():
+    """Latest AI quality scorecard run (python -m app.evals)."""
+    return await asyncio.to_thread(evals.latest)

@@ -8,6 +8,7 @@
 #   ./scripts/dev.sh setup-trailers  regenerate trailer telematics up to now (run on demo day so positions are current)
 #   ./scripts/dev.sh samples      redraw the sample bills of lading
 #   ./scripts/dev.sh test         governance unit tests
+#   ./scripts/dev.sh eval [case]  AI quality scorecard: 14 questions through Gemini (a few minutes, about $1)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,5 +36,6 @@ MSG
   setup-trailers) docker compose run --rm --no-deps backend python -m app.data.trailers ;;
   samples)    docker compose run --rm --no-deps -v "$PWD/backend/samples:/app/samples" backend python -m app.data.make_samples ;;
   test)       docker compose run --rm --no-deps -v "$PWD/backend/tests:/app/tests:ro" backend sh -c "pip install -q pytest && python -m pytest -q -p no:cacheprovider tests" ;;
-  *) echo "usage: $0 [start|stop|status|logs [service]|setup-data|setup-trailers|samples|test]"; exit 1 ;;
+  eval)       docker compose exec backend python -m app.evals ${2:+--only "$2"} ;;
+  *) echo "usage: $0 [start|stop|status|logs [service]|setup-data|setup-trailers|samples|test|eval [case]]"; exit 1 ;;
 esac

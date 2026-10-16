@@ -168,3 +168,6 @@ tr.clickable { cursor: pointer; } tr.clickable:hover { background: var(--surface
 .term-pin.active { border-color: var(--accent); }
 .leaflet-container { font: inherit; background: var(--surface-2); }
 @media (max-width: 900px) { .map-grid { grid-template-columns: 1fr; } .map { height: 420px; } .legend { margin-left: 0; } }
+.kpi.good strong { color: var(--ok); }
+ul.checks { list-style: none; padding: 0; margin: 4px 0 8px; display: flex; flex-direction: column; gap: 3px; font-size: 13.5px; }
+ul.checks li { color: var(--ok); } ul.checks li.bad { color: var(--bad); }
